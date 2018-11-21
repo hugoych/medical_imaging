@@ -10,7 +10,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
-
+from skimage import io
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.optim as optim
@@ -96,7 +96,38 @@ class SegmenterCNN(torch.nn.Module):
         output = int((in_size - kernel_size + 2*(padding)) / stride) + 1
 
         return(output)
+#%%
+class SegDataset(Dataset):
+
+    def __init__(self,root_dir, transform=None):
+        """
+        Args:
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.root_dir = 'Train/Seg_train'
+        self.transform = transform
+        self.liste = os.listdir(self.root_dir+'X_S')
+        self.liste_seg = os.listdir(self.root_dir+'Y_S')
+    def __len__(self):
+        #modify with list_dir
+        return len(self.landmarks_frame)
+
+    def __getitem__(self, idx):
         
+        img_name = os.path.join(self.root_dir,'X_S'+self.liste[idx])
+        img_name_seg = os.path.join(self.root_dir,'Y_S'+self.liste_seg[idx])
+        image = io.imread(img_name)
+        image_seg = io.imread(img_name_seg)
+        sample = {'image': image, 'segment': image_seg}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+    
+#%%
     
     
 def createLossAndOptimizer(net, learning_rate=0.001):
