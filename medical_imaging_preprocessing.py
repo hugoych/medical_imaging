@@ -133,6 +133,10 @@ for i in range(450):
             imsave(fileseg,seg)
             
 #%% create training dataset for adversarial learning
+df_train = pd.DataFrame(columns = ['ImageId','label'])
+df_val = pd.DataFrame(columns = ['ImageId','label'])
+
+#%%
 for i in range(450):
     if i%2 ==0 :        
         filename = 'Source/X_S/'+names[i]+'.jpg'
@@ -147,6 +151,8 @@ for i in range(450):
                     if exc.errno != errno.EEXIST:
                         raise
             imsave(file,im)
+            df2 = pd.DataFrame([[names[i],label]],columns = ['ImageId','label'])
+            df_train = df_train.append(df2)
         if i>=300:
             file = 'Val/Adv_val/X_S/'+names[i]+'.jpg'
             if not os.path.exists(os.path.dirname(file)):
@@ -156,10 +162,12 @@ for i in range(450):
                     if exc.errno != errno.EEXIST:
                         raise
             imsave(file,im)
+            df2 = pd.DataFrame([[names[i],label]],columns = ['ImageId','label'])
+            df_val = df_val.append(df2)
     if i%2 !=0 :        
         filename = 'Target/X_T1/'+names[450+i]+'.jpg'
         im  = imread(filename)
-        label = 'S'
+        label = 'T'
         if i<300:
             file = 'Train/Adv_train/X_T1/'+names[450+i]+'.jpg'
             if not os.path.exists(os.path.dirname(file)):
@@ -169,6 +177,8 @@ for i in range(450):
                     if exc.errno != errno.EEXIST:
                         raise
             imsave(file,im)
+            df2 = pd.DataFrame([[names[450+i],label]],columns = ['ImageId','label'])
+            df_train = df_train.append(df2)
         if i>=300:
             file = 'Val/Adv_val/X_T1/'+names[450+i]+'.jpg'
             if not os.path.exists(os.path.dirname(file)):
@@ -177,7 +187,30 @@ for i in range(450):
                 except OSError as exc: # Guard against race condition
                     if exc.errno != errno.EEXIST:
                         raise
-            imsave(file,im)            
+            imsave(file,im)
+            df2 = pd.DataFrame([[names[450+i],label]],columns = ['ImageId','label'])
+            df_val = df_val.append(df2)
+
+
+#%%
+
+if not os.path.exists(os.path.dirname('Train/Adv_train/train.csv')):
+    try:
+        os.makedirs(os.path.dirname('Train/Adv_train/train.csv'))
+    except OSError as exc: # Guard against race condition
+        if exc.errno != errno.EEXIST:
+            raise
+df_train.to_csv('Train/Adv_train/train.csv')
+
+
+if not os.path.exists(os.path.dirname('Train/Adv_val/val.csv')):
+    try:
+        os.makedirs(os.path.dirname('Train/Adv_val/val.csv'))
+    except OSError as exc: # Guard against race condition
+        if exc.errno != errno.EEXIST:
+            raise
+
+df_val.to_csv('Train/Adv_val/val.csv')            
             
             
             
@@ -185,6 +218,6 @@ for i in range(450):
 
 
 #%%
-       
+print(df_val)      
 
 
