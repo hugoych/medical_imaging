@@ -57,6 +57,49 @@ class Dataset(Dataset):
 
         return sample
 
+#%%
+class SegDataset(Dataset):
+
+    def __init__(self,root_dir, transform=None):
+        """
+        Args:
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.root_dir = 'Train/Seg_train'
+        self.transform = transform
+        self.liste = os.listdir(self.root_dir+'/X_S')
+        self.liste_seg = os.listdir(self.root_dir+'/Y_S')
+    def __len__(self):
+        #modify with list_dir
+        return len(self.landmarks_frame)
+
+    def __getitem__(self, idx):
+        
+        img_name = self.root_dir+'/X_S/'+self.liste[idx]
+        img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
+        image = io.imread(img_name)
+        image_seg = io.imread(img_name_seg)
+        sample = {'image': image, 'segment': image_seg}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+#%% TESTS
+        
+from skimage.io import imshow
+Seg = SegDataset('Train/Seg_train')
+
+a = Seg.__getitem__(1)
+print(os.listdir('Train/Seg_train/X_S')[1])
+
+b = imread('Train/Seg_train/X_S/IM_000032.jpg')
+imshow(a['image'])
+        
+#%%
+
 
 
 
@@ -154,38 +197,7 @@ class Segmenter(object):
             return (2*intersection)/union
     
         self.loss = DSC()
-#%%
-class SegDataset(Dataset):
 
-    def __init__(self,root_dir, transform=None):
-        """
-        Args:
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.root_dir = 'Train/Seg_train'
-        self.transform = transform
-        self.liste = os.listdir(self.root_dir+'X_S')
-        self.liste_seg = os.listdir(self.root_dir+'Y_S')
-    def __len__(self):
-        #modify with list_dir
-        return len(self.landmarks_frame)
-
-    def __getitem__(self, idx):
-        
-        img_name = os.path.join(self.root_dir,'X_S'+self.liste[idx])
-        img_name_seg = os.path.join(self.root_dir,'Y_S'+self.liste_seg[idx])
-        image = io.imread(img_name)
-        image_seg = io.imread(img_name_seg)
-        sample = {'image': image, 'segment': image_seg}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-    
-#%%
         
     
         
