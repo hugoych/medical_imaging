@@ -10,7 +10,7 @@ import torch
 import torchvision
 import torchvision.transforms as transforms
 from torch.utils.data import Dataset, DataLoader
-
+from skimage import io
 from torch.autograd import Variable
 import torch.nn.functional as F
 import torch.optim as optim
