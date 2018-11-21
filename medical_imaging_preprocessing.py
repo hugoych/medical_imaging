@@ -90,22 +90,101 @@ for i  in range(n):
         im_final[:,:,2] = im_noised_g.copy()
         imsave(filename2,im_final)
         #imsave(filename2,im)
-#%%
+#%% Creating batches for the training of the segmenter
+
+for i in range(450):
+        filename = 'Source/X_S/'+names[i]+'.jpg'
+        filename_seg = 'Source/Y_S/'+names_seg[i]+'.jpg'
+        im  = imread(filename)
+        seg = imread(filename_seg)
+        if i<300:
+            file = 'Train/Seg_train/X_S/'+names[i]+'.jpg'
+            fileseg ='Train/Seg_train/Y_S/'+names_seg[i]+'.jpg' 
+            if not os.path.exists(os.path.dirname(file)):
+                try:
+                    os.makedirs(os.path.dirname(file))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(file,im)
+            if not os.path.exists(os.path.dirname(fileseg)):
+                try:
+                    os.makedirs(os.path.dirname(fileseg))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(fileseg,seg) 
+        if i>=300:
+            file = 'Val/Seg_val/X_S/'+names[i]+'.jpg'
+            fileseg ='Val/Seg_val/Y_S/'+names_seg[i]+'.jpg' 
+            if not os.path.exists(os.path.dirname(file)):
+                try:
+                    os.makedirs(os.path.dirname(file))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(file,im)
+            if not os.path.exists(os.path.dirname(fileseg)):
+                try:
+                    os.makedirs(os.path.dirname(fileseg))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(fileseg,seg)
+            
+#%% create training dataset for adversarial learning
+for i in range(450):
+    if i%2 ==0 :        
+        filename = 'Source/X_S/'+names[i]+'.jpg'
+        im  = imread(filename)
+        label = 'S'
+        if i<300:
+            file = 'Train/Adv_train/X_S/'+names[i]+'.jpg'
+            if not os.path.exists(os.path.dirname(file)):
+                try:
+                    os.makedirs(os.path.dirname(file))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(file,im)
+        if i>=300:
+            file = 'Val/Adv_val/X_S/'+names[i]+'.jpg'
+            if not os.path.exists(os.path.dirname(file)):
+                try:
+                    os.makedirs(os.path.dirname(file))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(file,im)
+    if i%2 !=0 :        
+        filename = 'Target/X_T1/'+names[450+i]+'.jpg'
+        im  = imread(filename)
+        label = 'S'
+        if i<300:
+            file = 'Train/Adv_train/X_T1/'+names[450+i]+'.jpg'
+            if not os.path.exists(os.path.dirname(file)):
+                try:
+                    os.makedirs(os.path.dirname(file))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(file,im)
+        if i>=300:
+            file = 'Val/Adv_val/X_T1/'+names[450+i]+'.jpg'
+            if not os.path.exists(os.path.dirname(file)):
+                try:
+                    os.makedirs(os.path.dirname(file))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
+            imsave(file,im)            
+            
+            
+            
+
 
 
 #%%
        
-        
-#print(k)
-#data_separation
-## create an image transformation to put 60 percent in S and 40 percent in T
-## S is a folder with both segmentation and image
-## T only image
-## image transformation could ve : transfor to Y,u,v space apply a linear transform on u or v? Analog with GE, SWI
-## create B_adv, B_seg for the training 
-## create a validation set
-
-#for im_name in names_df['ImageId'].values:
-    
 
 
