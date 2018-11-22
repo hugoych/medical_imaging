@@ -17,7 +17,7 @@ import torch.optim as optim
 import cv2
 import os
 import time
-
+import pandas as pd
 
 class Dataset(Dataset):
     """Face Landmarks dataset."""
@@ -67,16 +67,17 @@ class SegDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
+        self.csv = pd.read_csv('ImageName.csv')
         self.root_dir = 'Train/Seg_train'
         self.transform = transform
         self.liste = os.listdir(self.root_dir+'/X_S')
         self.liste_seg = os.listdir(self.root_dir+'/Y_S')
     def __len__(self):
         #modify with list_dir
-        return len(self.landmarks_frame)
+        return len(self.csv)
 
     def __getitem__(self, idx):
-        
+        print('idx',idx)
         img_name = self.root_dir+'/X_S/'+self.liste[idx]
         img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
         image = io.imread(img_name)
@@ -92,23 +93,30 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
                                           batch_size = 10,
                                           shuffle = True,
                                           num_workers=1)
+
 val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val'),
                                          batch_size = 10,
                                          shuffle = True,
                                          num_workers = 1)
+def resize300(sample):
+    image = cv2.resize(sample['image'],(300,300))
+    segmentation = cv2.resize(sample['segment'],(300,300))
+    segmentation = np.array((255-segmentation,segmentation)).reshape(2,300,300)/255
+    sample = {'image': image, 'segment': segmentation}
+    return sample
+
 #%% TESTS
         
 from skimage.io import imshow
-Seg = SegDataset('Train/Seg_train')
+Seg = SegDataset('Train/Seg_train',transform=resize300)
 
 a = Seg.__getitem__(1)
-print(os.listdir('Train/Seg_train/X_S')[1])
+#print(os.listdir('Train/Seg_train/X_S')[1])
 
-b = imread('Train/Seg_train/X_S/IM_000032.jpg')
-imshow(a['image'])
+#b = imread('Train/Seg_train/X_S/IM_000032.jpg')
+imshow(a['segment'][1])
         
 #%%
-
 
 
 
@@ -174,22 +182,24 @@ class DiscriminatorCNN(torch.nn.Module):
         out_discriminator = F.relu(self.fully(y4))
         
         return out_discriminator
+    
+def get_train_loader(batch_size):
+    train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
+                                          batch_size = batch_size,
+                                          shuffle = True,
+                                          num_workers=0)
+    return train_seg_loader
+
 
 class Segmenter(object):
-    def __init__(self, args):
+    def __init__(self, epoch=100,lr=0.001,batch_size = 4, dataset=SegDataset('Train/Seg_train'), gpu_mode=True):
         # parameters
-        self.epoch = args.epoch
-        self.learning_rate = args.lr
+        self.epoch = epoch
+        self.learning_rate = lr
         self.sample_num = 100
-        self.batch_size = args.batch_size
-        self.save_dir = args.save_dir
-        self.result_dir = args.result_dir
-        self.dataset = args.dataset
-        self.log_dir = args.log_dir
-        self.gpu_mode = args.gpu_mode
-        self.model_name = args.gan_type
-        self.input_size = args.input_size
-        self.z_dim = 62
+        self.batch_size = batch_size
+        self.dataset = dataset
+        self.gpu_mode = gpu_mode
         
         # load dataset
         # networks init
@@ -205,7 +215,7 @@ class Segmenter(object):
             
             return (2*intersection)/union
     
-        self.loss = DSC()
+        self.loss = DSC
 
         
     
@@ -216,7 +226,7 @@ class Segmenter(object):
         print("===== HYPERPARAMETERS =====")
         print("batch_size=", batch_size)
         print("epochs=", n_epochs)
-        print("learning_rate=", self.lr)
+        print("learning_rate=", self.learning_rate)
         print("=" * 30)
         
         #Get training data
@@ -243,7 +253,10 @@ class Segmenter(object):
                 inputs, labels = data
                 
                 #Wrap them in a Variable object
-                inputs, labels = Variable(inputs), Variable(labels)
+                if self.gpu_mode:
+                    inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
+                else:
+                    inputs, labels = Variable(inputs), Variable(labels)
                 
                 #Set the parameter gradients to zero
                 optimizer.zero_grad()
@@ -271,7 +284,10 @@ class Segmenter(object):
             for inputs, labels in val_loader:
                 
                 #Wrap tensors in Variables
-                inputs, labels = Variable(inputs), Variable(labels)
+                if self.gpu_mode:
+                    inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
+                else:
+                    inputs, labels = Variable(inputs), Variable(labels)
                 
                 #Forward pass
                 val_outputs = net(inputs)
