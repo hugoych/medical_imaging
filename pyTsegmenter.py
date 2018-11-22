@@ -87,6 +87,15 @@ class SegDataset(Dataset):
             sample = self.transform(sample)
 
         return sample
+
+train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
+                                          batch_size = 10,
+                                          shuffle = True,
+                                          num_workers=1)
+val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val'),
+                                         batch_size = 10,
+                                         shuffle = True,
+                                         num_workers = 1)
 #%% TESTS
         
 from skimage.io import imshow
