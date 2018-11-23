@@ -58,27 +58,27 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
                                           num_workers=1)
 
 
-def resize300(sample):
-    image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)
-    segmentation = cv2.resize(sample['segment'],(300,300))
-    segmentation = np.array((255-segmentation,segmentation)).reshape(2,300,300)/255
+def resize(sample):
+    image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)/255
+    segmentation = cv2.resize(sample['segment'],(278,278))
+    segmentation = np.array((255-segmentation,segmentation)).reshape(2,278,278)/255
     sample = {'image': image, 'segment': segmentation}
     return sample
 
-val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val',transform = resize300),
-                                         batch_size = 10,
+val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val',transform = resize),
+                                         batch_size = 1,
                                          shuffle = True,
                                          num_workers = 0)
 #%% TESTS
         
 from skimage.io import imshow
-Seg = SegDataset('Train/Seg_train',transform=resize300)
+Seg = SegDataset('Train/Seg_train',transform=resize)
 
 a = Seg.__getitem__(166)
 #print(os.listdir('Train/Seg_train/X_S')[1])
 
 #b = imread('Train/Seg_train/X_S/IM_000032.jpg')
-imshow(a['image'].reshape(100,100,3))
+imshow(a['segment'][0])
         
 #%%
 
@@ -91,37 +91,37 @@ class SegmenterCNN(torch.nn.Module):
         self.input_dim = in_channel
         self.output_dim = output_dim
         
-        self.conv1_1 = torch.nn.Conv2d(in_channel,30,3,1,1)
-        self.conv1_2 = torch.nn.Conv2d(30,30,3,1,1)
+        self.conv1_1 = torch.nn.Conv2d(in_channel,30,3,1)
+        self.conv1_2 = torch.nn.Conv2d(30,30,3,1)
         
-        self.conv2_1 = torch.nn.Conv2d(30,40,3,1,1)
-        self.conv2_2 = torch.nn.Conv2d(40,40,3,1,1)
+        self.conv2_1 = torch.nn.Conv2d(30,40,3,1)
+        self.conv2_2 = torch.nn.Conv2d(40,40,3,1)
         
-        self.conv3_1 = torch.nn.Conv2d(40,40,3,1,1)
-        self.conv3_2 = torch.nn.Conv2d(40,40,3,1,1)
+        self.conv3_1 = torch.nn.Conv2d(40,40,3,1)
+        self.conv3_2 = torch.nn.Conv2d(40,40,3,1)
         
-        self.conv4_1 = torch.nn.Conv2d(40,50,3,1,1)
-        self.conv4_2 = torch.nn.Conv2d(50,50,3,1,1)
+        self.conv4_1 = torch.nn.Conv2d(40,50,3,1)
+        self.conv4_2 = torch.nn.Conv2d(50,50,3,1)
         
-        self.conv5_1 = torch.nn.Conv2d(50,100,3,1,1)
-        self.conv5_2 = torch.nn.Conv2d(100,100,3,1,1)
+        self.conv5_1 = torch.nn.Conv2d(50,100,3,1)
+        self.conv5_2 = torch.nn.Conv2d(100,100,3,1)
         
-        self.final_layer = torch.nn.Conv2d(30,2,3,1,1)
+        self.final_layer = torch.nn.Conv2d(100,2,3,1)
         
     def forward(self,x):
     
         x1 = F.relu(self.conv1_1(x))
         x2 = F.relu(self.conv1_2(x1))
-        """x3 = F.relu(self.conv2_1(x2))
+        x3 = F.relu(self.conv2_1(x2))
         x4 = F.relu(self.conv2_2(x3))
         x5 = F.relu(self.conv3_1(x4))
         x6 = F.relu(self.conv3_2(x5))
         x7 = F.relu(self.conv4_1(x6))
         x8 = F.relu(self.conv4_2(x7))
         x9 = F.relu(self.conv5_1(x8))
-        x10 = F.relu(self.conv5_2(x9))"""
-        output_map = F.relu(self.final_layer(x2))
-        
+        x10 = F.relu(self.conv5_2(x9))
+        output_map = F.softmax(self.final_layer(x10),dim=1)
+        #print(output_map.view(2,1,300,300))
         return output_map
 
 class DiscriminatorCNN(torch.nn.Module):
@@ -156,7 +156,7 @@ def get_train_loader(dataset,batch_size):
 
 
 class Segmenter(object):
-    def __init__(self, epoch=100,lr=1,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize300), gpu_mode=True):
+    def __init__(self, epoch=20,lr=1e-4,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
         # parameters
         self.epoch = epoch
         self.learning_rate = lr
@@ -170,13 +170,15 @@ class Segmenter(object):
         self.optimizer = optim.Adam(self.net.parameters(), lr=self.learning_rate)
         
         def DSC(logits,labels):
-            pred_1 = logits.view(2,self.batch_size,300,300)[1]
-            labels_1 = labels.view(2,self.batch_size,300,300)[1]
+            pred_1 = logits.view(2,self.batch_size,278,278)
+            labels_1 = labels.view(2,self.batch_size,278,278)
             
-            intersection = torch.sum(pred_1*labels_1)
-            union = torch.sum(pred_1) + torch.sum(labels_1)
+            intersection_1 = torch.sum(pred_1[1]*labels_1[1])
+            intersection_0 = torch.sum(pred_1[0]*labels_1[0])
+            union_1 = torch.sum(pred_1[1]) + torch.sum(labels_1[1])
+            union_0 = torch.sum(pred_1[0]) + torch.sum(labels_1[0])
             
-            return (1-(2*intersection)/union)*100.00
+            return (1-(2*intersection_1)/union_1)
     
         self.loss = DSC
 
@@ -231,7 +233,8 @@ class Segmenter(object):
                 #loss_size.backward()
                 #optimizer.step()
                 loss_size.backward()
-                print(list(net.parameters())[0].grad.mean())
+                
+                #print(list(net.parameters())[0].grad.mean())
                 optimizer.step()
                 #Print statistics
                 running_loss += loss_size.item()
@@ -241,8 +244,7 @@ class Segmenter(object):
                 if (i + 1) % (print_every + 1) == 0:
                     print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
                             epoch+1, int(100 * (i+1) / n_batches), running_loss / print_every, time.time() - start_time))
-                    print('shape labels',labels.shape)
-                    print('data', outputs[1,0].mean(),outputs[1,1].mean())
+                    print('data max', outputs[0,0].max(),outputs[0,1].max())
                     #Reset running loss and time
                     running_loss = 0.0
                     start_time = time.time()
