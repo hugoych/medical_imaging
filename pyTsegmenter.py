@@ -60,8 +60,8 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
 
 def resize(sample):
     image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)/255
-    segmentation = cv2.resize(sample['segment'],(278,278))
-    segmentation = np.array((255-segmentation,segmentation)).reshape(2,278,278)/255
+    segmentation = cv2.resize(sample['segment'],(280,280))
+    segmentation = np.array((255-segmentation,segmentation)).reshape(2,280,280)/255
     sample = {'image': image, 'segment': segmentation}
     return sample
 
@@ -106,7 +106,7 @@ class SegmenterCNN(torch.nn.Module):
         self.conv5_1 = torch.nn.Conv2d(50,100,3,1)
         self.conv5_2 = torch.nn.Conv2d(100,100,3,1)
         
-        self.final_layer = torch.nn.Conv2d(100,2,3,1)
+        self.final_layer = torch.nn.Conv2d(100,2,1,)
         
     def forward(self,x):
     
@@ -156,7 +156,7 @@ def get_train_loader(dataset,batch_size):
 
 
 class Segmenter(object):
-    def __init__(self, epoch=20,lr=1e-4,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
+    def __init__(self, epoch=20,lr=1e-5,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
         # parameters
         self.epoch = epoch
         self.learning_rate = lr
@@ -170,15 +170,13 @@ class Segmenter(object):
         self.optimizer = optim.Adam(self.net.parameters(), lr=self.learning_rate)
         
         def DSC(logits,labels):
-            pred_1 = logits.view(2,self.batch_size,278,278)
-            labels_1 = labels.view(2,self.batch_size,278,278)
+            pred = logits.view(2,self.batch_size,280,280)
+            labels = labels.view(2,self.batch_size,280,280)
+            precision = torch.sum(pred*labels)/torch.sum(pred)
+            recall = torch.sum(pred*labels)/torch.sum(labels)
+
             
-            intersection_1 = torch.sum(pred_1[1]*labels_1[1])
-            intersection_0 = torch.sum(pred_1[0]*labels_1[0])
-            union_1 = torch.sum(pred_1[1]) + torch.sum(labels_1[1])
-            union_0 = torch.sum(pred_1[0]) + torch.sum(labels_1[0])
-            
-            return (1-(2*intersection_1)/union_1)
+            return -2*(precision*recall)/(precision+recall)
     
         self.loss = DSC
 
@@ -216,11 +214,12 @@ class Segmenter(object):
             for i, data in enumerate(train_loader, 0):
                 
                 #Get inputs
-                inputs, labels = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
                 #Wrap them in a Variable object
                 if self.gpu_mode:
-                    inputs, labels = Variable(inputs, requires_grad = True), Variable(labels)
+                    inputs, labels = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
+                    inputs, labels = Variable(inputs), Variable(labels)
                 else:
+                    inputs, labels = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
                     inputs, labels = Variable(inputs), Variable(labels)
                 
                 #Set the parameter gradients to zero
