@@ -19,43 +19,7 @@ import os
 import time
 import pandas as pd
 
-class Dataset(Dataset):
-    """Face Landmarks dataset."""
 
-    def __init__(self, csv_file, root_dir, transform=None):
-        """
-        Args:
-            csv_file (string): Path to the csv file with annotations.
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.landmarks_frame = pd.read_csv(csv_file)
-        self.root_dir = root_dir
-        self.transform = transform
-
-    def __len__(self):
-        return len(self.landmarks_frame)
-
-    def __getitem__(self, idx):
-        img_name = os.path.join(self.root_dir,
-                                self.landmarks_frame.iloc[idx, 0])
-        seg_name = os.path.join(self.root_dir,
-                                self.landmarks_frame.iloc[idx, 1])
-        image = cv2.imread(img_name+'.jpg',0)
-        segmentation = cv2.imread(seg_name + '.jpg',0)
-        landmarks = self.landmarks_frame.iloc[idx, 1:].as_matrix()
-        landmarks = landmarks.astype('float').reshape(-1, 2)
-        image = cv2.resize(image,(300,300))
-        segmentation = cv2.resize(segmentation,(300,300))
-        segmentation = np.array((255-segmentation,segmentation)).reshape(300,300,2)/255
-        
-        sample = {'image': image, 'segmentation': segmentation}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
 
 #%%
 class SegDataset(Dataset):
@@ -74,10 +38,9 @@ class SegDataset(Dataset):
         self.liste_seg = os.listdir(self.root_dir+'/Y_S')
     def __len__(self):
         #modify with list_dir
-        return len(self.csv)
+        return len(self.liste)
 
     def __getitem__(self, idx):
-        print('idx',idx)
         img_name = self.root_dir+'/X_S/'+self.liste[idx]
         img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
         image = io.imread(img_name)
@@ -94,27 +57,28 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
                                           shuffle = True,
                                           num_workers=1)
 
-val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val'),
-                                         batch_size = 10,
-                                         shuffle = True,
-                                         num_workers = 1)
+
 def resize300(sample):
-    image = cv2.resize(sample['image'],(300,300))
+    image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)
     segmentation = cv2.resize(sample['segment'],(300,300))
     segmentation = np.array((255-segmentation,segmentation)).reshape(2,300,300)/255
     sample = {'image': image, 'segment': segmentation}
     return sample
 
+val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val',transform = resize300),
+                                         batch_size = 10,
+                                         shuffle = True,
+                                         num_workers = 0)
 #%% TESTS
         
 from skimage.io import imshow
 Seg = SegDataset('Train/Seg_train',transform=resize300)
 
-a = Seg.__getitem__(1)
+a = Seg.__getitem__(166)
 #print(os.listdir('Train/Seg_train/X_S')[1])
 
 #b = imread('Train/Seg_train/X_S/IM_000032.jpg')
-imshow(a['segment'][1])
+imshow(a['image'].reshape(100,100,3))
         
 #%%
 
@@ -122,7 +86,7 @@ imshow(a['segment'][1])
 
 class SegmenterCNN(torch.nn.Module):
     
-    def __init__(self, in_channel=3,output_dim=2):
+    def __init__(self, in_channel=3,output_dim=1):
         super(SegmenterCNN, self).__init__() 
         self.input_dim = in_channel
         self.output_dim = output_dim
@@ -142,21 +106,21 @@ class SegmenterCNN(torch.nn.Module):
         self.conv5_1 = torch.nn.Conv2d(50,100,3,1,1)
         self.conv5_2 = torch.nn.Conv2d(100,100,3,1,1)
         
-        self.final_layer = torch.nn.Conv2d(100,1,3,1,2)
+        self.final_layer = torch.nn.Conv2d(30,2,3,1,1)
         
     def forward(self,x):
     
         x1 = F.relu(self.conv1_1(x))
         x2 = F.relu(self.conv1_2(x1))
-        x3 = F.relu(self.conv2_1(x2))
+        """x3 = F.relu(self.conv2_1(x2))
         x4 = F.relu(self.conv2_2(x3))
         x5 = F.relu(self.conv3_1(x4))
         x6 = F.relu(self.conv3_2(x5))
         x7 = F.relu(self.conv4_1(x6))
         x8 = F.relu(self.conv4_2(x7))
-        x9 = F.relu(self.conv4_1(x8))
-        x10 = F.relu(self.conv4_2(x9))
-        output_map = F.softmax(self.final_layer(x10))
+        x9 = F.relu(self.conv5_1(x8))
+        x10 = F.relu(self.conv5_2(x9))"""
+        output_map = F.relu(self.final_layer(x2))
         
         return output_map
 
@@ -183,8 +147,8 @@ class DiscriminatorCNN(torch.nn.Module):
         
         return out_discriminator
     
-def get_train_loader(batch_size):
-    train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
+def get_train_loader(dataset,batch_size):
+    train_seg_loader = torch.utils.data.DataLoader(dataset,
                                           batch_size = batch_size,
                                           shuffle = True,
                                           num_workers=0)
@@ -192,11 +156,10 @@ def get_train_loader(batch_size):
 
 
 class Segmenter(object):
-    def __init__(self, epoch=100,lr=0.001,batch_size = 4, dataset=SegDataset('Train/Seg_train'), gpu_mode=True):
+    def __init__(self, epoch=100,lr=1,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize300), gpu_mode=True):
         # parameters
         self.epoch = epoch
         self.learning_rate = lr
-        self.sample_num = 100
         self.batch_size = batch_size
         self.dataset = dataset
         self.gpu_mode = gpu_mode
@@ -207,30 +170,32 @@ class Segmenter(object):
         self.optimizer = optim.Adam(self.net.parameters(), lr=self.learning_rate)
         
         def DSC(logits,labels):
-            pred_1 = logits.view(2,300,300)[1]
-            labels_1 = labels.view(2,300,300)[1]
+            pred_1 = logits.view(2,self.batch_size,300,300)[1]
+            labels_1 = labels.view(2,self.batch_size,300,300)[1]
             
             intersection = torch.sum(pred_1*labels_1)
             union = torch.sum(pred_1) + torch.sum(labels_1)
             
-            return (2*intersection)/union
+            return (1-(2*intersection)/union)*100.00
     
         self.loss = DSC
 
         
     
         
-    def train(self, batch_size=4, n_epochs=50):
-        net = self.net
+    def train(self):
+        net = self.net.cuda()
+        batch_size=self.batch_size
+        n_epochs=self.epoch
         #Print all of the hyperparameters of the training iteration:
         print("===== HYPERPARAMETERS =====")
         print("batch_size=", batch_size)
         print("epochs=", n_epochs)
         print("learning_rate=", self.learning_rate)
         print("=" * 30)
-        
+
         #Get training data
-        train_loader = get_train_loader(batch_size)
+        train_loader = get_train_loader(self.dataset, batch_size)
         n_batches = len(train_loader)
         
         #Create our loss and optimizer functions
@@ -241,7 +206,6 @@ class Segmenter(object):
         
         #Loop for n_epochs
         for epoch in range(n_epochs):
-            
             running_loss = 0.0
             print_every = n_batches // 10
             start_time = time.time()
@@ -250,44 +214,46 @@ class Segmenter(object):
             for i, data in enumerate(train_loader, 0):
                 
                 #Get inputs
-                inputs, labels = data
-                
+                inputs, labels = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
                 #Wrap them in a Variable object
                 if self.gpu_mode:
-                    inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
+                    inputs, labels = Variable(inputs, requires_grad = True), Variable(labels)
                 else:
                     inputs, labels = Variable(inputs), Variable(labels)
                 
                 #Set the parameter gradients to zero
                 optimizer.zero_grad()
+
                 
                 #Forward pass, backward pass, optimize
                 outputs = net(inputs)
                 loss_size = loss(outputs, labels)
+                #loss_size.backward()
+                #optimizer.step()
                 loss_size.backward()
+                print(list(net.parameters())[0].grad.mean())
                 optimizer.step()
-                
                 #Print statistics
-                running_loss += loss_size.data[0]
-                total_train_loss += loss_size.data[0]
+                running_loss += loss_size.item()
+                total_train_loss += loss_size.item()
                 
                 #Print every 10th batch of an epoch
                 if (i + 1) % (print_every + 1) == 0:
                     print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
                             epoch+1, int(100 * (i+1) / n_batches), running_loss / print_every, time.time() - start_time))
+                    print('shape labels',labels.shape)
+                    print('data', outputs[1,0].mean(),outputs[1,1].mean())
                     #Reset running loss and time
                     running_loss = 0.0
                     start_time = time.time()
                 
             #At the end of the epoch, do a pass on the validation set
             total_val_loss = 0
-            for inputs, labels in val_loader:
+            
+            for data in val_loader:
                 
-                #Wrap tensors in Variables
-                if self.gpu_mode:
-                    inputs, labels = Variable(inputs).cuda(), Variable(labels).cuda()
-                else:
-                    inputs, labels = Variable(inputs), Variable(labels)
+                inputs, labels = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
+                #Wrap them in a Variable object
                 
                 #Forward pass
                 val_outputs = net(inputs)

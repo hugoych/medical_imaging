@@ -26,8 +26,9 @@ from PIL import ImageFilter
 #%%
 #import the files of names
 names_df = pd.read_csv("ImageName.csv")
-names = names_df['ImageId'].values
-names_seg = names_df['ImageSegId'].values
+names = np.sort(names_df['ImageId'].values)
+names_seg = np.sort(names_df['ImageSegId'].values)
+
 
 n = names.size
 
