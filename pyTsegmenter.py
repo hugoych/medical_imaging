@@ -59,9 +59,9 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
 
 
 def resize(sample):
-    image = cv2.resize(sample['image'],(50,50)).reshape(3,50,50)/255
-    segmentation = cv2.resize(sample['segment'],(32,32))
-    segmentation = np.array((255-segmentation,segmentation)).reshape(2,32,32)/255
+    image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)/255
+    segmentation = cv2.resize(sample['segment'],(282,282))
+    segmentation = np.array((255-segmentation,segmentation)).reshape(2,282,282)/255
     sample = {'image': image, 'segment': segmentation}
     return sample
 
@@ -134,9 +134,7 @@ class SegmenterCNN(torch.nn.Module):
         
         x9 = F.relu(self.conv5_1(x8))
         x10 = F.relu(self.conv5_bn(self.conv5_2(x9)))
-        #print(self.final_layer(x10).view(2,1,32,32)[1].max(),self.final_layer(x10).view(2,1,32,32)[0].max())
         output_map = F.softmax(self.final_layer(x10),dim=1)
-        #print(output_map.view(2,1,300,300))
         return output_map
 
 class DiscriminatorCNN(torch.nn.Module):
@@ -185,8 +183,8 @@ class Segmenter(object):
         self.optimizer = optim.Adam(self.net.parameters(), lr=self.learning_rate)
         
         def DSC(logits,labels):
-            pred = logits.view(2,self.batch_size,32,32)
-            labels =labels.view(2,self.batch_size,32,32)
+            pred = logits.view(2,self.batch_size,282,282)
+            labels =labels.view(2,self.batch_size,282,282)
             precision = torch.sum(pred*labels)/torch.sum(pred)
             recall = torch.sum(pred*labels)/torch.sum(labels)
 
@@ -258,12 +256,14 @@ class Segmenter(object):
                 if (i + 1) % (print_every + 1) == 0:
                     print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
                             epoch+1, int(100 * (i+1) / n_batches), running_loss / print_every, time.time() - start_time))
-                    print('data max', outputs[0,0].max(),outputs[0,1].max())
+                    #print('data max', outputs[0,0].max(),outputs[0,1].max())
+                    
                     #Reset running loss and time
                     running_loss = 0.0
                     start_time = time.time()
                 
             #At the end of the epoch, do a pass on the validation set
+            #test()
             total_val_loss = 0
             
             for data in val_loader:
@@ -282,7 +282,7 @@ class Segmenter(object):
                     
                 
 def test():
-    pred = seg.net.cuda()(torch.tensor(a['image'].reshape(1,3,50,50)).cuda())
-    imshow(F.softmax(pred,dim=1).cpu().detach().numpy().reshape(2,32,32)[0])
+    pred = seg.net.cuda()(torch.tensor(a['image'].reshape(1,3,300,300),dtype=torch.float).cuda())
+    imshow(pred.cpu().detach().numpy().reshape(2,282,282)[1])
 
 
