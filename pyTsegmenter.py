@@ -59,9 +59,9 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
 
 
 def resize(sample):
-    image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)/255
-    segmentation = cv2.resize(sample['segment'],(280,280))
-    segmentation = np.array((255-segmentation,segmentation)).reshape(2,280,280)/255
+    image = cv2.resize(sample['image'],(50,50)).reshape(3,50,50)/255
+    segmentation = cv2.resize(sample['segment'],(32,32))
+    segmentation = np.array((255-segmentation,segmentation)).reshape(2,32,32)/255
     sample = {'image': image, 'segment': segmentation}
     return sample
 
@@ -93,33 +93,48 @@ class SegmenterCNN(torch.nn.Module):
         
         self.conv1_1 = torch.nn.Conv2d(in_channel,30,3,1)
         self.conv1_2 = torch.nn.Conv2d(30,30,3,1)
+        self.conv1_bn = torch.nn.BatchNorm2d(30)
+
         
         self.conv2_1 = torch.nn.Conv2d(30,40,3,1)
         self.conv2_2 = torch.nn.Conv2d(40,40,3,1)
+        self.conv2_bn = torch.nn.BatchNorm2d(40)
+
         
         self.conv3_1 = torch.nn.Conv2d(40,40,3,1)
         self.conv3_2 = torch.nn.Conv2d(40,40,3,1)
+        self.conv3_bn = torch.nn.BatchNorm2d(40)
+        
         
         self.conv4_1 = torch.nn.Conv2d(40,50,3,1)
         self.conv4_2 = torch.nn.Conv2d(50,50,3,1)
+        self.conv4_bn = torch.nn.BatchNorm2d(50)
+
         
         self.conv5_1 = torch.nn.Conv2d(50,100,3,1)
-        self.conv5_2 = torch.nn.Conv2d(100,100,3,1)
+        self.conv5_2 = torch.nn.Conv2d(100,100,1,1)
+        self.conv5_bn = torch.nn.BatchNorm2d(100)
+
         
-        self.final_layer = torch.nn.Conv2d(100,2,1,)
+        self.final_layer = torch.nn.Conv2d(100,2,1,1)
         
     def forward(self,x):
     
         x1 = F.relu(self.conv1_1(x))
-        x2 = F.relu(self.conv1_2(x1))
+        x2 = F.relu(self.conv1_bn(self.conv1_2(x1)))
+        
         x3 = F.relu(self.conv2_1(x2))
-        x4 = F.relu(self.conv2_2(x3))
+        x4 = F.relu(self.conv2_bn(self.conv2_2(x3)))
+        
         x5 = F.relu(self.conv3_1(x4))
-        x6 = F.relu(self.conv3_2(x5))
+        x6 = F.relu(self.conv3_bn(self.conv3_2(x5)))
+        
         x7 = F.relu(self.conv4_1(x6))
-        x8 = F.relu(self.conv4_2(x7))
+        x8 = F.relu(self.conv4_bn(self.conv4_2(x7)))
+        
         x9 = F.relu(self.conv5_1(x8))
-        x10 = F.relu(self.conv5_2(x9))
+        x10 = F.relu(self.conv5_bn(self.conv5_2(x9)))
+        #print(self.final_layer(x10).view(2,1,32,32)[1].max(),self.final_layer(x10).view(2,1,32,32)[0].max())
         output_map = F.softmax(self.final_layer(x10),dim=1)
         #print(output_map.view(2,1,300,300))
         return output_map
@@ -170,8 +185,8 @@ class Segmenter(object):
         self.optimizer = optim.Adam(self.net.parameters(), lr=self.learning_rate)
         
         def DSC(logits,labels):
-            pred = logits.view(2,self.batch_size,280,280)
-            labels = labels.view(2,self.batch_size,280,280)
+            pred = logits.view(2,self.batch_size,32,32)
+            labels =labels.view(2,self.batch_size,32,32)
             precision = torch.sum(pred*labels)/torch.sum(pred)
             recall = torch.sum(pred*labels)/torch.sum(labels)
 
@@ -266,7 +281,8 @@ class Segmenter(object):
             print("Training finished, took {:.2f}s".format(time.time() - training_start_time))
                     
                 
-    
-
+def test():
+    pred = seg.net.cuda()(torch.tensor(a['image'].reshape(1,3,50,50)).cuda())
+    imshow(F.softmax(pred,dim=1).cpu().detach().numpy().reshape(2,32,32)[0])
 
 
