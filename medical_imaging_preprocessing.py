@@ -55,8 +55,10 @@ for i  in range(n):
         
     if i>=450:
         im = imread('im_resized/'+names[i]+'_resized.jpg')
+        im_seg = imread('im_resized/'+names_seg[i]+'_resized.jpg')
         filename = 'Target/X_T1/'+names[i]+'.jpg'
         filename2 = 'Target/X_T2/'+names[i]+'.jpg'
+        filename_seg = 'Target/Y_T/'+names_seg[i]+'.jpg'
         if not os.path.exists(os.path.dirname(filename)):
             try:
                 os.makedirs(os.path.dirname(filename))
@@ -69,6 +71,7 @@ for i  in range(n):
         im_final[:,:,1] = im_noised_r.copy()
         im_final[:,:,0] = im[:,:,0].copy()
         im_final[:,:,2] = im[:,:,2].copy()
+        
         imsave(filename,im_final)
         if not os.path.exists(os.path.dirname(filename2)):
             try:
@@ -90,7 +93,13 @@ for i  in range(n):
         im_final[:,:,1] = im_noised_r.copy()
         im_final[:,:,2] = im_noised_g.copy()
         imsave(filename2,im_final)
-        #imsave(filename2,im)
+        if not os.path.exists(os.path.dirname(filename_seg)):
+            try:
+                os.makedirs(os.path.dirname(filename_seg))
+            except OSError as exc: # Guard against race condition
+                if exc.errno != errno.EEXIST:
+                    raise        #imsave(filename2,im)
+        imsave(filename_seg,im_seg)
 #%% Creating batches for the training of the segmenter
 
 for i in range(450):
@@ -138,58 +147,102 @@ df_train = pd.DataFrame(columns = ['ImageId','label'])
 df_val = pd.DataFrame(columns = ['ImageId','label'])
 
 #%%
-for i in range(450):
+for i in range(n):
     if i%2 ==0 :        
-        filename = 'Source/X_S/'+names[i]+'.jpg'
+        filename = 'Source/X_S/'+names[i//2]+'.jpg'
+        filename_seg = 'Source/Y_S/'+names_seg[i//2]+'.jpg'
         im  = imread(filename)
+        im_seg = imread(filename_seg)
+        
         label = 'S'
-        if i<300:
-            file = 'Train/Adv_train/X_S/'+names[i]+'.jpg'
+        if i<600:
+            file = 'Train/Adv_train/X_S/'+names[i//2]+'.jpg'
+            file_seg = 'Train/Adv_train/Y_S/'+names_seg[i//2]+'.jpg'
             if not os.path.exists(os.path.dirname(file)):
                 try:
                     os.makedirs(os.path.dirname(file))
                 except OSError as exc: # Guard against race condition
                     if exc.errno != errno.EEXIST:
                         raise
+            if not os.path.exists(os.path.dirname(file_seg)):
+                try:
+                    os.makedirs(os.path.dirname(file_seg))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
             imsave(file,im)
-            df2 = pd.DataFrame([[names[i],label]],columns = ['ImageId','label'])
+            imsave(file_seg,im_seg)
+            df2 = pd.DataFrame([[names[i//2], names_seg[i//2], label]],columns = ['ImageId','SegId','label'])
             df_train = df_train.append(df2)
-        if i>=300:
-            file = 'Val/Adv_val/X_S/'+names[i]+'.jpg'
+            
+        if i>=600:
+            file = 'Val/Adv_val/X_S/'+names[i//2]+'.jpg'
+            file_seg = 'Val/Adv_val/Y_S/'+names_seg[i//2]+'.jpg'
             if not os.path.exists(os.path.dirname(file)):
                 try:
                     os.makedirs(os.path.dirname(file))
                 except OSError as exc: # Guard against race condition
                     if exc.errno != errno.EEXIST:
                         raise
+            if not os.path.exists(os.path.dirname(file_seg)):
+                try:
+                    os.makedirs(os.path.dirname(file_seg))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
             imsave(file,im)
-            df2 = pd.DataFrame([[names[i],label]],columns = ['ImageId','label'])
+            imsave(file_seg,im_seg)
+            df2 = pd.DataFrame([[names[i//2], names_seg[i//2], label]],columns = ['ImageId','SegId','label'])
             df_val = df_val.append(df2)
+            
     if i%2 !=0 :        
-        filename = 'Target/X_T1/'+names[450+i]+'.jpg'
+        filename = 'Target/X_T1/'+names[450+(i-1)//2]+'.jpg'
+        filename_seg = 'Target/Y_T/'+names_seg[450+(i-1)//2]+'.jpg'
         im  = imread(filename)
+        im_seg = imread(filename_seg)
+        
         label = 'T'
-        if i<300:
-            file = 'Train/Adv_train/X_T1/'+names[450+i]+'.jpg'
+        if i<600:
+            file = 'Train/Adv_train/X_T1/'+names[450+(i-1)//2]+'.jpg'
+            file_seg = 'Train/Adv_train/Y_T/'+names_seg[450+(i-1)//2]+'.jpg'
+            
             if not os.path.exists(os.path.dirname(file)):
                 try:
                     os.makedirs(os.path.dirname(file))
                 except OSError as exc: # Guard against race condition
                     if exc.errno != errno.EEXIST:
                         raise
+            if not os.path.exists(os.path.dirname(file_seg)):
+                try:
+                    os.makedirs(os.path.dirname(file_seg))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
             imsave(file,im)
-            df2 = pd.DataFrame([[names[450+i],label]],columns = ['ImageId','label'])
+            imsave(file_seg,im_seg)
+
+            df2 = pd.DataFrame([[names[450+(i-1)//2], names_seg[450+(i-1)//2], label]],columns = ['ImageId','SegId','label'])
             df_train = df_train.append(df2)
-        if i>=300:
-            file = 'Val/Adv_val/X_T1/'+names[450+i]+'.jpg'
+            
+        if i>=600:
+            file = 'Val/Adv_val/X_T1/'+names[450+(i-1)//2]+'.jpg'
+            file_seg = 'Val/Adv_val/Y_T/'+names_seg[450+(i-1)//2]+'.jpg'
             if not os.path.exists(os.path.dirname(file)):
                 try:
                     os.makedirs(os.path.dirname(file))
                 except OSError as exc: # Guard against race condition
                     if exc.errno != errno.EEXIST:
                         raise
+            if not os.path.exists(os.path.dirname(file_seg)):
+                try:
+                    os.makedirs(os.path.dirname(file_seg))
+                except OSError as exc: # Guard against race condition
+                    if exc.errno != errno.EEXIST:
+                        raise
             imsave(file,im)
-            df2 = pd.DataFrame([[names[450+i],label]],columns = ['ImageId','label'])
+            imsave(file_seg,im_seg)
+            
+            df2 = pd.DataFrame([[names[450+(i-1)//2], names_seg[450+(i-1)//2], label]],columns = ['ImageId','SegId','label'])
             df_val = df_val.append(df2)
 
 
@@ -204,14 +257,14 @@ if not os.path.exists(os.path.dirname('Train/Adv_train/train.csv')):
 df_train.to_csv('Train/Adv_train/train.csv')
 
 
-if not os.path.exists(os.path.dirname('Train/Adv_val/val.csv')):
+if not os.path.exists(os.path.dirname('Val/Adv_val/val.csv')):
     try:
-        os.makedirs(os.path.dirname('Train/Adv_val/val.csv'))
+        os.makedirs(os.path.dirname('Val/Adv_val/val.csv'))
     except OSError as exc: # Guard against race condition
         if exc.errno != errno.EEXIST:
             raise
 
-df_val.to_csv('Train/Adv_val/val.csv')            
+df_val.to_csv('Val/Adv_val/val.csv')            
             
             
             

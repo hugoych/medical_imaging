@@ -31,7 +31,35 @@ class SegDataset(Dataset):
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.csv = pd.read_csv('ImageName.csv')
+        self.root_dir = 'Train/Seg_train'
+        self.transform = transform
+        self.liste = os.listdir(self.root_dir+'/X_S')
+        self.liste_seg = os.listdir(self.root_dir+'/Y_S')
+    def __len__(self):
+        #modify with list_dir
+        return len(self.liste)
+
+    def __getitem__(self, idx):
+        img_name = self.root_dir+'/X_S/'+self.liste[idx]
+        img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
+        image = io.imread(img_name)
+        image_seg = io.imread(img_name_seg)
+        sample = {'image': image, 'segment': image_seg}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+class TargetDataset(Dataset):
+
+    def __init__(self,root_dir, transform=None):
+        """
+        Args:
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
         self.root_dir = 'Train/Seg_train'
         self.transform = transform
         self.liste = os.listdir(self.root_dir+'/X_S')
@@ -436,14 +464,18 @@ class UDA(object):
                 
                 
                 loss_discriminator = loss_dis(outputs_adv,label_adv)
+                
                 loss_adversarial = loss_seg_adv(loss_discriminator,outputs_seg[0],labels_seg,alpha) 
                 #loss_size.backward()
                 #optimizer.step()
+                
                 loss_discriminator.backward()
+                
+                
                 loss_adversarial.backward()
+                optimizer_seg.step()
                 
                 #print(list(net.parameters())[0].grad.mean())
-                optimizer_seg.step()
                 optimizer_adv.step()
                 #Print statistics
                 running_loss += loss_adversarial.item()
