@@ -268,6 +268,6 @@ class Segmenter(object):
                     
                 
     
+Seg = Segmenter()
 
-
-
+Seg.train()
