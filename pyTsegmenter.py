@@ -57,11 +57,46 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
                                           shuffle = True,
                                           num_workers=1)
 
+class SegDataset(Dataset):
+
+    def __init__(self,root_dir, transform=None):
+        """
+        Args:
+            root_dir (string): Directory with all the images.
+            transform (callable, optional): Optional transform to be applied
+                on a sample.
+        """
+        self.csv = pd.read_csv('ImageName.csv')
+        self.root_dir = 'Train/Seg_train'
+        self.transform = transform
+        self.liste = os.listdir(self.root_dir+'/X_S')
+        self.liste_seg = os.listdir(self.root_dir+'/Y_S')
+    def __len__(self):
+        #modify with list_dir
+        return len(self.liste)
+
+    def __getitem__(self, idx):
+        img_name = self.root_dir+'/X_S/'+self.liste[idx]
+        img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
+        image = io.imread(img_name)
+        image_seg = io.imread(img_name_seg)
+        sample = {'image': image, 'segment': image_seg}
+
+        if self.transform:
+            sample = self.transform(sample)
+
+        return sample
+
+train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
+                                          batch_size = 10,
+                                          shuffle = True,
+                                          num_workers=1)
+
 
 def resize(sample):
     image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)/255
-    segmentation = cv2.resize(sample['segment'],(278,278))
-    segmentation = np.array((255-segmentation,segmentation)).reshape(2,278,278)/255
+    segmentation = cv2.resize(sample['segment'],(282,282))
+    segmentation = np.array((255-segmentation,segmentation)).reshape(2,282,282)/255
     sample = {'image': image, 'segment': segmentation}
     return sample
 
@@ -86,43 +121,61 @@ imshow(a['segment'][0])
 
 class SegmenterCNN(torch.nn.Module):
     
-    def __init__(self, in_channel=3,output_dim=1):
+    def __init__(self, in_channel=3,output_dim=1,adv= False):
         super(SegmenterCNN, self).__init__() 
         self.input_dim = in_channel
         self.output_dim = output_dim
+        self.adv = adv
         
         self.conv1_1 = torch.nn.Conv2d(in_channel,30,3,1)
         self.conv1_2 = torch.nn.Conv2d(30,30,3,1)
+        self.conv1_bn = torch.nn.BatchNorm2d(30)
+
         
         self.conv2_1 = torch.nn.Conv2d(30,40,3,1)
         self.conv2_2 = torch.nn.Conv2d(40,40,3,1)
+        self.conv2_bn = torch.nn.BatchNorm2d(40)
+
         
         self.conv3_1 = torch.nn.Conv2d(40,40,3,1)
         self.conv3_2 = torch.nn.Conv2d(40,40,3,1)
+        self.conv3_bn = torch.nn.BatchNorm2d(40)
+        
         
         self.conv4_1 = torch.nn.Conv2d(40,50,3,1)
         self.conv4_2 = torch.nn.Conv2d(50,50,3,1)
+        self.conv4_bn = torch.nn.BatchNorm2d(50)
+
         
         self.conv5_1 = torch.nn.Conv2d(50,100,3,1)
-        self.conv5_2 = torch.nn.Conv2d(100,100,3,1)
+        self.conv5_2 = torch.nn.Conv2d(100,100,1,1)
+        self.conv5_bn = torch.nn.BatchNorm2d(100)
+
         
-        self.final_layer = torch.nn.Conv2d(100,2,3,1)
+        self.final_layer = torch.nn.Conv2d(100,2,1,1)
         
     def forward(self,x):
     
         x1 = F.relu(self.conv1_1(x))
-        x2 = F.relu(self.conv1_2(x1))
+        x2 = F.relu(self.conv1_bn(self.conv1_2(x1)))
+        
         x3 = F.relu(self.conv2_1(x2))
-        x4 = F.relu(self.conv2_2(x3))
+        x4 = F.relu(self.conv2_bn(self.conv2_2(x3)))
+        
         x5 = F.relu(self.conv3_1(x4))
-        x6 = F.relu(self.conv3_2(x5))
+        x6 = F.relu(self.conv3_bn(self.conv3_2(x5)))
+        
         x7 = F.relu(self.conv4_1(x6))
-        x8 = F.relu(self.conv4_2(x7))
+        x8 = F.relu(self.conv4_bn(self.conv4_2(x7)))
+        
         x9 = F.relu(self.conv5_1(x8))
-        x10 = F.relu(self.conv5_2(x9))
+        x10 = F.relu(self.conv5_bn(self.conv5_2(x9)))
         output_map = F.softmax(self.final_layer(x10),dim=1)
-        #print(output_map.view(2,1,300,300))
-        return output_map
+        
+        if self.adv:
+            return output_map, x4, x6, x8, x10
+        else:
+            return output_map
 
 class DiscriminatorCNN(torch.nn.Module):
     
@@ -156,13 +209,14 @@ def get_train_loader(dataset,batch_size):
 
 
 class Segmenter(object):
-    def __init__(self, epoch=20,lr=1e-4,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
+    def __init__(self, epoch=20,lr=1e-5,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
         # parameters
         self.epoch = epoch
         self.learning_rate = lr
         self.batch_size = batch_size
         self.dataset = dataset
         self.gpu_mode = gpu_mode
+        self.input_dim = 300
         
         # load dataset
         # networks init
@@ -170,18 +224,17 @@ class Segmenter(object):
         self.optimizer = optim.Adam(self.net.parameters(), lr=self.learning_rate)
         
         def DSC(logits,labels):
-            pred_1 = logits.view(2,self.batch_size,278,278)
-            labels_1 = labels.view(2,self.batch_size,278,278)
-            
-            intersection_1 = torch.sum(pred_1[1]*labels_1[1])
-            intersection_0 = torch.sum(pred_1[0]*labels_1[0])
-            union_1 = torch.sum(pred_1[1]) + torch.sum(labels_1[1])
-            union_0 = torch.sum(pred_1[0]) + torch.sum(labels_1[0])
-            
-            return (1-(2*intersection_1)/union_1)
-    
-        self.loss = DSC
+            pred = logits.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
+            labels =labels.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
+            precision = torch.sum(pred*labels)/torch.sum(pred)
+            recall = torch.sum(pred*labels)/torch.sum(labels)
 
+            
+            return -2*(precision*recall)/(precision+recall)
+    
+        self.loss = torch.nn.BCEWithLogitsLoss()
+        
+        
         
     
         
@@ -195,7 +248,10 @@ class Segmenter(object):
         print("epochs=", n_epochs)
         print("learning_rate=", self.learning_rate)
         print("=" * 30)
-
+        val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val',transform = resize),
+                                         batch_size = batch_size,
+                                         shuffle = True,
+                                         num_workers = 0)
         #Get training data
         train_loader = get_train_loader(self.dataset, batch_size)
         n_batches = len(train_loader)
@@ -216,11 +272,12 @@ class Segmenter(object):
             for i, data in enumerate(train_loader, 0):
                 
                 #Get inputs
-                inputs, labels = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
                 #Wrap them in a Variable object
                 if self.gpu_mode:
-                    inputs, labels = Variable(inputs, requires_grad = True), Variable(labels)
+                    inputs, labels = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
+                    inputs, labels = Variable(inputs), Variable(labels)
                 else:
+                    inputs, labels = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
                     inputs, labels = Variable(inputs), Variable(labels)
                 
                 #Set the parameter gradients to zero
@@ -244,18 +301,21 @@ class Segmenter(object):
                 if (i + 1) % (print_every + 1) == 0:
                     print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
                             epoch+1, int(100 * (i+1) / n_batches), running_loss / print_every, time.time() - start_time))
-                    print('data max', outputs[0,0].max(),outputs[0,1].max())
+                    #print('data max', outputs[0,0].max(),outputs[0,1].max())
+                    
                     #Reset running loss and time
                     running_loss = 0.0
                     start_time = time.time()
                 
             #At the end of the epoch, do a pass on the validation set
+            #test()
             total_val_loss = 0
             
             for data in val_loader:
                 
                 inputs, labels = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
                 #Wrap them in a Variable object
+                inputs, labels = Variable(inputs), Variable(labels)
                 
                 #Forward pass
                 val_outputs = net(inputs)
@@ -267,7 +327,177 @@ class Segmenter(object):
             print("Training finished, took {:.2f}s".format(time.time() - training_start_time))
                     
                 
+<<<<<<< HEAD
     
 Seg = Segmenter()
 
 Seg.train()
+=======
+            def test():
+                pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
+                imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
+
+
+class UDA(object):
+    def __init__(self, epoch=20,lr_seg=1e-5,lr_adv=0.001,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
+        # parameters
+        self.epoch = epoch
+        self.lr_seg = lr_seg
+        self.lr_adv = lr_adv
+        self.batch_size = batch_size
+        self.dataset = dataset
+        self.gpu_mode = gpu_mode
+        self.input_dim = 300
+        
+        # load dataset
+        # networks init
+        self.seg = SegmenterCNN()
+        self.adv = DiscriminatorCNN()
+        self.optimizer_seg = optim.Adam(self.seg.parameters(), lr=self.lr_seg)
+        self.optimizer_adv = optim.Adam(self.adv.parameters(), lr=self.lr_adv)
+        
+        def DSC(logits,labels):
+            pred = logits.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
+            labels =labels.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
+            precision = torch.sum(pred*labels)/torch.sum(pred)
+            recall = torch.sum(pred*labels)/torch.sum(labels)
+
+            
+            return -2*(precision*recall)/(precision+recall)
+    
+        self.loss_seg = DSC
+        
+        
+        
+        
+    
+        
+    def train(self):
+        seg = self.seg.cuda()
+        adv = self.adv.cuda()
+        batch_size=self.batch_size
+        n_epochs=self.epoch
+        #Print all of the hyperparameters of the training iteration:
+        print("===== HYPERPARAMETERS =====")
+        print("batch_size=", batch_size)
+        print("epochs=", n_epochs)
+        print("learning_rate=", self.learning_rate)
+        print("=" * 30)
+        
+        "LOADER A MODIFER"     
+        val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val',transform = resize),
+                                         batch_size = batch_size,
+                                         shuffle = True,
+                                         num_workers = 0)
+        #Get training data
+        train_loader = get_train_loader(self.dataset, batch_size)
+        
+        n_batches = len(train_loader)
+        
+
+        
+        #Create our loss and optimizer functions
+        loss_dis , loss_seg = torch.nn.BCELoss(), self.loss_seg 
+        optimizer_seg, optimizer_adv = self.optimizer_seg, self.optimizer_adv
+        
+        def loss_seg_adv(loss_adv,logits,gt,alpha):
+            return loss_seg(logits,gt) -alpha*loss_adv
+        
+        #Time for printing
+        training_start_time = time.time()
+        
+        #Loop for n_epochs
+        alpha = 0
+        e1=10
+        e2=35
+        alpha_max = 0.05
+        
+        for epoch in range(n_epochs):
+            running_loss = 0.0
+            print_every = n_batches // 10
+            start_time = time.time()
+            total_train_loss = 0
+            
+            if epoch >= e1 and epoch <= e2:
+                alpha = alpha_max*(epoch-e1)/(e2-1)
+            
+            for i, data in enumerate(train_loader, 0):
+                
+                #Get inputs
+                #Wrap them in a Variable object
+                if self.gpu_mode:
+                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
+                    label_adv = torch.tensor(data['source'], dtype=torch.float).cuda()
+                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                else:
+                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
+                    label_adv = torch.tensor(data['source'], dtype=torch.float)
+                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                
+                #Set the parameter gradients to zero
+                optimizer_seg.zero_grad()
+                optimizer_adv.zero_grad()
+                
+                #Forward pass, backward pass, optimize
+                outputs_seg = seg(inputs)
+                outputs_adv = adv(outputs_seg[1:])
+                
+                
+                loss_discriminator = loss_dis(outputs_adv,label_adv)
+                loss_adversarial = loss_seg_adv(loss_discriminator,outputs_seg[0],labels_seg,alpha) 
+                #loss_size.backward()
+                #optimizer.step()
+                loss_discriminator.backward()
+                loss_adversarial.backward()
+                
+                #print(list(net.parameters())[0].grad.mean())
+                optimizer_seg.step()
+                optimizer_adv.step()
+                #Print statistics
+                running_loss += loss_adversarial.item()
+                total_train_loss += loss_adversarial.item()
+                
+                #Print every 10th batch of an epoch
+                if (i + 1) % (print_every + 1) == 0:
+                    print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
+                            epoch+1, int(100 * (i+1) / n_batches), running_loss / print_every, time.time() - start_time))
+                    #print('data max', outputs[0,0].max(),outputs[0,1].max())
+                    
+                    #Reset running loss and time
+                    running_loss = 0.0
+                    start_time = time.time()
+                
+            #At the end of the epoch, do a pass on the validation set
+            #test()
+            total_val_loss = 0
+            
+            for data in val_loader:
+                
+                if self.gpu_mode:
+                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
+                    label_adv = torch.tensor(data['source'], dtype=torch.float).cuda()
+                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                else:
+                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
+                    label_adv = torch.tensor(data['source'], dtype=torch.float)
+                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    
+                #Forward pass
+                val_outputs_seg = seg(inputs)
+                
+                
+                
+                loss_segmenter = loss_seg(val_outputs_seg[0],labels_seg)
+
+                val_loss_size = loss_segmenter(val_outputs_seg, labels)
+                total_val_loss += val_loss_size.data[0]
+                
+            print("Validation loss = {:.2f}".format(total_val_loss / len(val_loader)))
+            
+            print("Training finished, took {:.2f}s".format(time.time() - training_start_time))
+                    
+                
+            def test():
+                pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
+                imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
+>>>>>>> aca14955941c68ecff630c6b6148eb29552778f7
