@@ -325,14 +325,6 @@ class Segmenter(object):
             print("Validation loss = {:.2f}".format(total_val_loss / len(val_loader)))
             
             print("Training finished, took {:.2f}s".format(time.time() - training_start_time))
-                    
-                
-<<<<<<< HEAD
-    
-Seg = Segmenter()
-
-Seg.train()
-=======
             def test():
                 pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
                 imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
@@ -500,4 +492,4 @@ class UDA(object):
             def test():
                 pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
                 imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
->>>>>>> aca14955941c68ecff630c6b6148eb29552778f7
+
