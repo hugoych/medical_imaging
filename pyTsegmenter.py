@@ -24,14 +24,14 @@ import pandas as pd
 #%%
 class SegDataset(Dataset):
 
-    def __init__(self,root_dir, transform=None):
+    def __init__(self,root_dir='Train/Seg_train', transform=None):
         """
         Args:
             root_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.root_dir = 'Train/Seg_train'
+        self.root_dir = root_dir
         self.transform = transform
         self.liste = os.listdir(self.root_dir+'/X_S')
         self.liste_seg = os.listdir(self.root_dir+'/Y_S')
@@ -53,24 +53,24 @@ class SegDataset(Dataset):
 
 class TargetDataset(Dataset):
 
-    def __init__(self,root_dir, transform=None):
+    def __init__(self,root_dir='Train/Adv_train', transform=None):
         """
         Args:
             root_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.root_dir = 'Train/Seg_train'
+        self.root_dir = root_dir
         self.transform = transform
-        self.liste = os.listdir(self.root_dir+'/X_S')
-        self.liste_seg = os.listdir(self.root_dir+'/Y_S')
+        self.liste = os.listdir(self.root_dir+'/X_T1')
+        self.liste_seg = os.listdir(self.root_dir+'/Y_T')
     def __len__(self):
         #modify with list_dir
         return len(self.liste)
 
     def __getitem__(self, idx):
-        img_name = self.root_dir+'/X_S/'+self.liste[idx]
-        img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
+        img_name = self.root_dir+'/X_T1/'+self.liste[idx]
+        img_name_seg = self.root_dir+'/Y_T/'+self.liste_seg[idx]
         image = io.imread(img_name)
         image_seg = io.imread(img_name_seg)
         sample = {'image': image, 'segment': image_seg}
@@ -85,53 +85,58 @@ train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
                                           shuffle = True,
                                           num_workers=1)
 
-class SegDataset(Dataset):
+class AdvDataset(Dataset):
 
-    def __init__(self,root_dir, transform=None):
+    def __init__(self,root_dir='Train/Adv_train', transform=None):
         """
         Args:
             root_dir (string): Directory with all the images.
             transform (callable, optional): Optional transform to be applied
                 on a sample.
         """
-        self.csv = pd.read_csv('ImageName.csv')
-        self.root_dir = 'Train/Seg_train'
+        
+        self.root_dir = root_dir
         self.transform = transform
-        self.liste = os.listdir(self.root_dir+'/X_S')
-        self.liste_seg = os.listdir(self.root_dir+'/Y_S')
+        self.liste_S = os.listdir(self.root_dir+'/X_S')
+        self.liste_seg_S = os.listdir(self.root_dir+'/Y_S')
+        self.liste_T = os.listdir(self.root_dir+'/X_T1')
+        self.liste_seg_T = os.listdir(self.root_dir+'/Y_T')
+        
     def __len__(self):
         #modify with list_dir
-        return len(self.liste)
+        return len(self.liste_S)
 
     def __getitem__(self, idx):
-        img_name = self.root_dir+'/X_S/'+self.liste[idx]
-        img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
+        p = np.random.rand(1)
+        if p>=0.5:
+            img_name = self.root_dir+'/X_S/'+self.liste_S[idx]
+            img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg_S[idx]
+            label=0
+        else:
+            img_name = self.root_dir+'/X_T1/'+self.liste_T[idx]
+            img_name_seg = self.root_dir+'/Y_T/'+self.liste_seg_T[idx]
+            label=1
         image = io.imread(img_name)
         image_seg = io.imread(img_name_seg)
-        sample = {'image': image, 'segment': image_seg}
+        sample = {'image': image, 'segment': image_seg, 'source':label}
 
         if self.transform:
             sample = self.transform(sample)
 
         return sample
 
-train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
-                                          batch_size = 10,
-                                          shuffle = True,
-                                          num_workers=1)
 
 
 def resize(sample):
     image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)/255
     segmentation = cv2.resize(sample['segment'],(282,282))
     segmentation = np.array((255-segmentation,segmentation)).reshape(2,282,282)/255
-    sample = {'image': image, 'segment': segmentation}
+    sample['image'] = image
+    sample['segment'] = segmentation
+
     return sample
 
-val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val',transform = resize),
-                                         batch_size = 1,
-                                         shuffle = True,
-                                         num_workers = 0)
+
 #%% TESTS
         
 from skimage.io import imshow
@@ -215,15 +220,18 @@ class DiscriminatorCNN(torch.nn.Module):
         self.conv_d_1 = torch.nn.Conv2d(in_channel,100,3,3)
         self.conv_d_2 = torch.nn.Conv2d(100,100,3,3,1)
         self.conv_d_34 = torch.nn.Conv2d(100,100,3,1,1)
-        self.fully =torch.nn.Linear(100*34*34,2)
+        self.conv_bn = torch.nn.BatchNorm2d(100)
+
+        self.fully =torch.nn.Linear(100*32*32,2)
     
     def forward(self,x):
         
-        y1 = F.relu(self.conv_d_1(x))
-        y2 = F.relu(self.conv_d_2(y1))
-        y3 = F.relu(self.conv_d_34(y2))
-        y4 = F.relu(self.conv_d_34(y3))
-        y4 = y4.view(-1,100*34*34)
+        y1 = F.relu(self.conv_bn(self.conv_d_1(x)))
+        
+        y2 = F.relu(self.conv_bn(self.conv_d_2(y1)))
+        y3 = F.relu(self.conv_bn(self.conv_d_34(y2)))
+        y4 = F.relu(self.conv_bn(self.conv_d_34(y3)))
+        y4 = y4.view(-1,100*32*32)
         out_discriminator = F.relu(self.fully(y4))
         
         return out_discriminator
@@ -353,13 +361,23 @@ class Segmenter(object):
             print("Validation loss = {:.2f}".format(total_val_loss / len(val_loader)))
             
             print("Training finished, took {:.2f}s".format(time.time() - training_start_time))
-            def test():
-                pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
-                imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
+    def test(self):
+        pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
+        imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
+    
+    def save(self,PATH_seg):
+        torch.save(self.net.state_dict(), PATH_seg)
+        
+    def load(self,PATH_seg):
+        
+        self.net.load_state_dict(torch.load(PATH_seg))
+        self.net.eval()
+
+
 
 
 class UDA(object):
-    def __init__(self, epoch=20,lr_seg=1e-5,lr_adv=0.001,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
+    def __init__(self, epoch=20,lr_seg=1e-5,lr_adv=0.001,batch_size = 10, dataset=AdvDataset('Train/Adv_train',transform=resize), gpu_mode=True):
         # parameters
         self.epoch = epoch
         self.lr_seg = lr_seg
@@ -401,11 +419,12 @@ class UDA(object):
         print("===== HYPERPARAMETERS =====")
         print("batch_size=", batch_size)
         print("epochs=", n_epochs)
-        print("learning_rate=", self.learning_rate)
+        print("learning_rate_seg=", self.lr_seg)
+        print("learning_rate_adv=", self.lr_adv)
         print("=" * 30)
         
         "LOADER A MODIFER"     
-        val_loader = torch.utils.data.DataLoader(SegDataset('Val/Seg_val',transform = resize),
+        val_loader = torch.utils.data.DataLoader(AdvDataset('Val/Adv_val',transform = resize),
                                          batch_size = batch_size,
                                          shuffle = True,
                                          num_workers = 0)
@@ -448,11 +467,11 @@ class UDA(object):
                 if self.gpu_mode:
                     inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
                     label_adv = torch.tensor(data['source'], dtype=torch.float).cuda()
-                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
                 else:
                     inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
                     label_adv = torch.tensor(data['source'], dtype=torch.float)
-                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
                 
                 #Set the parameter gradients to zero
                 optimizer_seg.zero_grad()
@@ -464,19 +483,19 @@ class UDA(object):
                 
                 
                 loss_discriminator = loss_dis(outputs_adv,label_adv)
-                
                 loss_adversarial = loss_seg_adv(loss_discriminator,outputs_seg[0],labels_seg,alpha) 
                 #loss_size.backward()
                 #optimizer.step()
                 
                 loss_discriminator.backward()
+                optimizer_adv.step()
                 
-                
-                loss_adversarial.backward()
-                optimizer_seg.step()
+                if label_adv == 0:
+                    loss_adversarial.backward()
+                    optimizer_seg.step()
                 
                 #print(list(net.parameters())[0].grad.mean())
-                optimizer_adv.step()
+                
                 #Print statistics
                 running_loss += loss_adversarial.item()
                 total_train_loss += loss_adversarial.item()
@@ -500,11 +519,11 @@ class UDA(object):
                 if self.gpu_mode:
                     inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
                     label_adv = torch.tensor(data['source'], dtype=torch.float).cuda()
-                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
                 else:
                     inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
                     label_adv = torch.tensor(data['source'], dtype=torch.float)
-                    inputs, labels = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
                     
                 #Forward pass
                 val_outputs_seg = seg(inputs)
@@ -521,7 +540,19 @@ class UDA(object):
             print("Training finished, took {:.2f}s".format(time.time() - training_start_time))
                     
                 
-            def test():
-                pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
-                imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
+    def test(self,):
+        pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
+        imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
+    
+    def save(self,PATH_seg,PATH_adv):
+        torch.save(self.seg.state_dict(), PATH_seg)
+        torch.save(self.adv.state_dict(),PATH_adv)
+    
+    def load(self,PATH_seg,PATH_adv):
+                
+        self.seg.load_state_dict(torch.load(PATH_seg))
+        self.seg.eval()
+        
+        self.adv.load_state_dict(torch.load(PATH_adv))
+        self.adv.eval()
 
