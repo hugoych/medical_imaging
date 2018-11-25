@@ -128,9 +128,9 @@ class AdvDataset(Dataset):
 
 
 def resize(sample):
-    image = cv2.resize(sample['image'],(300,300)).reshape(3,300,300)/255
-    segmentation = cv2.resize(sample['segment'],(282,282))
-    segmentation = np.array((255-segmentation,segmentation)).reshape(2,282,282)/255
+    image = cv2.resize(sample['image'],(150,150)).reshape(3,150,150)/255
+    segmentation = cv2.resize(sample['segment'],(132,132))
+    segmentation = np.array((255-segmentation,segmentation)).reshape(2,132,132)/255
     sample['image'] = image
     sample['segment'] = segmentation
 
@@ -204,9 +204,10 @@ class SegmenterCNN(torch.nn.Module):
         x9 = F.relu(self.conv5_1(x8))
         x10 = F.relu(self.conv5_bn(self.conv5_2(x9)))
         output_map = F.softmax(self.final_layer(x10),dim=1)
+        in_dis = torch.cat((x4, x6, x8, x10), dim=1)
         
         if self.adv:
-            return output_map, x4, x6, x8, x10
+            return output_map, in_dis
         else:
             return output_map
 
@@ -218,11 +219,11 @@ class DiscriminatorCNN(torch.nn.Module):
         self.output_dim = output_dim
         
         self.conv_d_1 = torch.nn.Conv2d(in_channel,100,3,3)
-        self.conv_d_2 = torch.nn.Conv2d(100,100,3,3,1)
+        self.conv_d_2 = torch.nn.Conv2d(100,100,3,3,5)
         self.conv_d_34 = torch.nn.Conv2d(100,100,3,1,1)
         self.conv_bn = torch.nn.BatchNorm2d(100)
 
-        self.fully =torch.nn.Linear(100*32*32,2)
+        self.fully =torch.nn.Linear(100*18*18,2)
     
     def forward(self,x):
         
