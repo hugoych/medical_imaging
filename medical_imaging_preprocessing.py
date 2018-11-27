@@ -20,7 +20,7 @@ from skimage import util
 from skimage.transform import resize
 from mpl_toolkits.axes_grid1 import AxesGrid
 from time import time
-#import cv2
+import cv2
 from PIL import ImageFilter
 
 #%%
@@ -151,8 +151,8 @@ for i in range(n):
     if i%2 ==0 :        
         filename = 'Source/X_S/'+names[i//2]+'.jpg'
         filename_seg = 'Source/Y_S/'+names_seg[i//2]+'.jpg'
-        im  = imread(filename)
-        im_seg = imread(filename_seg)
+        im  = cv2.resize(imread(filename),(150,150))
+        im_seg = cv2.resize(imread(filename_seg),(150,150))
         
         label = 'S'
         if i<600:
@@ -198,8 +198,8 @@ for i in range(n):
     if i%2 !=0 :        
         filename = 'Target/X_T1/'+names[450+(i-1)//2]+'.jpg'
         filename_seg = 'Target/Y_T/'+names_seg[450+(i-1)//2]+'.jpg'
-        im  = imread(filename)
-        im_seg = imread(filename_seg)
+        im  = cv2.resize(imread(filename),(150,150))
+        im_seg = cv2.resize(imread(filename_seg),(150,150))
         
         label = 'T'
         if i<600:
