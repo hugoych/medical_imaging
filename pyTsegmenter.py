@@ -5,143 +5,26 @@ Created on Wed Nov 21 09:46:14 2018
 @author: hugol
 """
 
-import numpy as np
 import torch
-import torchvision
-import torchvision.transforms as transforms
-from torch.utils.data import Dataset, DataLoader
-from skimage import io
 from torch.autograd import Variable
-import torch.nn.functional as F
 import torch.optim as optim
-import cv2
-import os
-import time
-import pandas as pd
 
+import time
+from datasets import SegDataset,AdvDataset,resize, TargetDataset
+from nets import SegmenterCNN,DiscriminatorCNN
 
 
 #%%
-class SegDataset(Dataset):
 
-    def __init__(self,root_dir='Train/Seg_train', transform=None):
-        """
-        Args:
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.root_dir = root_dir
-        self.transform = transform
-        self.liste = os.listdir(self.root_dir+'/X_S')
-        self.liste_seg = os.listdir(self.root_dir+'/Y_S')
-    def __len__(self):
-        #modify with list_dir
-        return len(self.liste)
-
-    def __getitem__(self, idx):
-        img_name = self.root_dir+'/X_S/'+self.liste[idx]
-        img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg[idx]
-        image = io.imread(img_name)
-        image_seg = io.imread(img_name_seg)
-        sample = {'image': image, 'segment': image_seg}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-
-class TargetDataset(Dataset):
-
-    def __init__(self,root_dir='Train/Adv_train', transform=None):
-        """
-        Args:
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        self.root_dir = root_dir
-        self.transform = transform
-        self.liste = os.listdir(self.root_dir+'/X_T1')
-        self.liste_seg = os.listdir(self.root_dir+'/Y_T')
-    def __len__(self):
-        #modify with list_dir
-        return len(self.liste)
-
-    def __getitem__(self, idx):
-        img_name = self.root_dir+'/X_T1/'+self.liste[idx]
-        img_name_seg = self.root_dir+'/Y_T/'+self.liste_seg[idx]
-        image = io.imread(img_name)
-        image_seg = io.imread(img_name_seg)
-        sample = {'image': image, 'segment': image_seg}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-
-train_seg_loader = torch.utils.data.DataLoader(SegDataset('Train/Seg_train'),
-                                          batch_size = 10,
-                                          shuffle = True,
-                                          num_workers=1)
-
-class AdvDataset(Dataset):
-
-    def __init__(self,root_dir='Train/Adv_train', transform=None):
-        """
-        Args:
-            root_dir (string): Directory with all the images.
-            transform (callable, optional): Optional transform to be applied
-                on a sample.
-        """
-        
-        self.root_dir = root_dir
-        self.transform = transform
-        self.liste_S = os.listdir(self.root_dir+'/X_S')
-        self.liste_seg_S = os.listdir(self.root_dir+'/Y_S')
-        self.liste_T = os.listdir(self.root_dir+'/X_T1')
-        self.liste_seg_T = os.listdir(self.root_dir+'/Y_T')
-        
-    def __len__(self):
-        #modify with list_dir
-        return len(self.liste_S)
-
-    def __getitem__(self, idx):
-        p = np.random.rand(1)
-        if p>=0.5:
-            img_name = self.root_dir+'/X_S/'+self.liste_S[idx]
-            img_name_seg = self.root_dir+'/Y_S/'+self.liste_seg_S[idx]
-            label=0
-        else:
-            img_name = self.root_dir+'/X_T1/'+self.liste_T[idx]
-            img_name_seg = self.root_dir+'/Y_T/'+self.liste_seg_T[idx]
-            label=1
-        image = io.imread(img_name)
-        image_seg = io.imread(img_name_seg)
-        sample = {'image': image, 'segment': image_seg, 'source':label}
-
-        if self.transform:
-            sample = self.transform(sample)
-
-        return sample
-
-
-
-def resize(sample):
-    image = cv2.resize(sample['image'],(150,150)).reshape(3,150,150)/255
-    segmentation = cv2.resize(sample['segment'],(132,132))
-    segmentation = np.array((255-segmentation,segmentation)).reshape(2,132,132)/255
-    sample['image'] = image
-    sample['segment'] = segmentation
-
-    return sample
 
 
 #%% TESTS
         
 from skimage.io import imshow
-Seg = SegDataset('Train/Seg_train',transform=resize)
 
+Seg = SegDataset('Train/Seg_train',transform=resize)
+Tar = TargetDataset('Target',transform=resize)
+b = Tar.__getitem__(150)
 a = Seg.__getitem__(166)
 #print(os.listdir('Train/Seg_train/X_S')[1])
 
@@ -152,90 +35,7 @@ imshow(a['segment'][0])
 
 
 
-class SegmenterCNN(torch.nn.Module):
-    
-    def __init__(self, in_channel=3,output_dim=1,adv= False):
-        super(SegmenterCNN, self).__init__() 
-        self.input_dim = in_channel
-        self.output_dim = output_dim
-        self.adv = adv
-        
-        self.conv1_1 = torch.nn.Conv2d(in_channel,30,3,1)
-        self.conv1_2 = torch.nn.Conv2d(30,30,3,1)
-        self.conv1_bn = torch.nn.BatchNorm2d(30)
 
-        
-        self.conv2_1 = torch.nn.Conv2d(30,40,3,1)
-        self.conv2_2 = torch.nn.Conv2d(40,40,3,1)
-        self.conv2_bn = torch.nn.BatchNorm2d(40)
-
-        
-        self.conv3_1 = torch.nn.Conv2d(40,40,3,1)
-        self.conv3_2 = torch.nn.Conv2d(40,40,3,1)
-        self.conv3_bn = torch.nn.BatchNorm2d(40)
-        
-        
-        self.conv4_1 = torch.nn.Conv2d(40,50,3,1)
-        self.conv4_2 = torch.nn.Conv2d(50,50,3,1)
-        self.conv4_bn = torch.nn.BatchNorm2d(50)
-
-        
-        self.conv5_1 = torch.nn.Conv2d(50,100,3,1)
-        self.conv5_2 = torch.nn.Conv2d(100,100,1,1)
-        self.conv5_bn = torch.nn.BatchNorm2d(100)
-
-        
-        self.final_layer = torch.nn.Conv2d(100,2,1,1)
-        
-    def forward(self,x):
-    
-        x1 = F.relu(self.conv1_1(x))
-        x2 = F.relu(self.conv1_bn(self.conv1_2(x1)))
-        
-        x3 = F.relu(self.conv2_1(x2))
-        x4 = F.relu(self.conv2_bn(self.conv2_2(x3)))
-        
-        x5 = F.relu(self.conv3_1(x4))
-        x6 = F.relu(self.conv3_bn(self.conv3_2(x5)))
-        
-        x7 = F.relu(self.conv4_1(x6))
-        x8 = F.relu(self.conv4_bn(self.conv4_2(x7)))
-        
-        x9 = F.relu(self.conv5_1(x8))
-        x10 = F.relu(self.conv5_bn(self.conv5_2(x9)))
-        output_map = F.softmax(self.final_layer(x10),dim=1)
-        in_dis = torch.cat((x4, x6, x8, x10), dim=1)
-        
-        if self.adv:
-            return output_map, in_dis
-        else:
-            return output_map
-
-class DiscriminatorCNN(torch.nn.Module):
-    
-    def __init__(self,in_channel=230,output_dim=2):
-        super(DiscriminatorCNN, self).__init__()
-        self.input_dim = in_channel
-        self.output_dim = output_dim
-        
-        self.conv_d_1 = torch.nn.Conv2d(in_channel,100,3,3)
-        self.conv_d_2 = torch.nn.Conv2d(100,100,3,3,5)
-        self.conv_d_34 = torch.nn.Conv2d(100,100,3,1,1)
-        self.conv_bn = torch.nn.BatchNorm2d(100)
-
-        self.fully =torch.nn.Linear(100*18*18,2)
-    
-    def forward(self,x):
-        
-        y1 = F.relu(self.conv_bn(self.conv_d_1(x)))
-        
-        y2 = F.relu(self.conv_bn(self.conv_d_2(y1)))
-        y3 = F.relu(self.conv_bn(self.conv_d_34(y2)))
-        y4 = F.relu(self.conv_bn(self.conv_d_34(y3)))
-        y4 = y4.view(-1,100*32*32)
-        out_discriminator = F.relu(self.fully(y4))
-        
-        return out_discriminator
     
 def get_train_loader(dataset,batch_size):
     train_seg_loader = torch.utils.data.DataLoader(dataset,
@@ -246,14 +46,14 @@ def get_train_loader(dataset,batch_size):
 
 
 class Segmenter(object):
-    def __init__(self, epoch=20,lr=1e-5,batch_size = 10, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
+    def __init__(self, epoch=20,lr=1e-5,batch_size = 1, dataset=SegDataset('Train/Seg_train',transform=resize), gpu_mode=True):
         # parameters
         self.epoch = epoch
         self.learning_rate = lr
         self.batch_size = batch_size
         self.dataset = dataset
         self.gpu_mode = gpu_mode
-        self.input_dim = 300
+        self.input_dim = 150
         
         # load dataset
         # networks init
@@ -263,13 +63,13 @@ class Segmenter(object):
         def DSC(logits,labels):
             pred = logits.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
             labels =labels.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
-            precision = torch.sum(pred*labels)/torch.sum(pred)
-            recall = torch.sum(pred*labels)/torch.sum(labels)
+            precision = torch.sum(pred[1]*labels[1])/torch.sum(pred[1])
+            recall = torch.sum(pred[1]*labels[1])/torch.sum(labels[1])
 
             
             return -2*(precision*recall)/(precision+recall)
     
-        self.loss = torch.nn.BCEWithLogitsLoss()
+        self.loss = DSC
         
         
         
@@ -338,7 +138,7 @@ class Segmenter(object):
                 if (i + 1) % (print_every + 1) == 0:
                     print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
                             epoch+1, int(100 * (i+1) / n_batches), running_loss / print_every, time.time() - start_time))
-                    #print('data max', outputs[0,0].max(),outputs[0,1].max())
+                    print('data max', outputs[0,0].max(),outputs[0,1].max())
                     
                     #Reset running loss and time
                     running_loss = 0.0
@@ -378,7 +178,7 @@ class Segmenter(object):
 
 
 class UDA(object):
-    def __init__(self, epoch=20,lr_seg=1e-5,lr_adv=0.001,batch_size = 10, dataset=AdvDataset('Train/Adv_train',transform=resize), gpu_mode=True):
+    def __init__(self, epoch=45,lr_seg=0.0001,lr_adv=0.001,batch_size = 1, dataset=AdvDataset('Train/Adv_train',transform=resize), gpu_mode=True):
         # parameters
         self.epoch = epoch
         self.lr_seg = lr_seg
@@ -386,25 +186,26 @@ class UDA(object):
         self.batch_size = batch_size
         self.dataset = dataset
         self.gpu_mode = gpu_mode
-        self.input_dim = 300
+        self.input_dim = 150
         
         # load dataset
         # networks init
-        self.seg = SegmenterCNN()
+        self.seg = SegmenterCNN(adv=True)
         self.adv = DiscriminatorCNN()
         self.optimizer_seg = optim.Adam(self.seg.parameters(), lr=self.lr_seg)
         self.optimizer_adv = optim.Adam(self.adv.parameters(), lr=self.lr_adv)
         
-        def DSC(logits,labels):
+    def DSC(logits,labels):
+            eps=10e-5
             pred = logits.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
             labels =labels.view(2,self.batch_size,self.input_dim-18,self.input_dim-18)
-            precision = torch.sum(pred*labels)/torch.sum(pred)
-            recall = torch.sum(pred*labels)/torch.sum(labels)
-
+            precision = torch.sum(pred[1]*labels[1])/torch.sum(pred[1])
             
-            return -2*(precision*recall)/(precision+recall)
+            recall = torch.sum(pred[1]*labels[1])/torch.sum(labels[1])
+            
+            return -2*(precision*recall)/(precision+recall+eps)
     
-        self.loss_seg = DSC
+    
         
         
         
@@ -435,9 +236,9 @@ class UDA(object):
         n_batches = len(train_loader)
         
 
-        
+
         #Create our loss and optimizer functions
-        loss_dis , loss_seg = torch.nn.BCELoss(), self.loss_seg 
+        loss_dis , loss_seg = torch.nn.BCELoss(), DSC
         optimizer_seg, optimizer_adv = self.optimizer_seg, self.optimizer_adv
         
         def loss_seg_adv(loss_adv,logits,gt,alpha):
@@ -448,102 +249,137 @@ class UDA(object):
         
         #Loop for n_epochs
         alpha = 0
-        e1=10
-        e2=35
-        alpha_max = 0.05
+        e1=15
+        e2=40
+        alpha_max = 0.1
         
         for epoch in range(n_epochs):
             running_loss = 0.0
+            running_loss_dis = 0.0
             print_every = n_batches // 10
             start_time = time.time()
             total_train_loss = 0
-            
+            total_train_loss_dis = 0
+            G=0
+            F=0
             if epoch >= e1 and epoch <= e2:
                 alpha = alpha_max*(epoch-e1)/(e2-1)
             
             for i, data in enumerate(train_loader, 0):
+               
+                
                 
                 #Get inputs
                 #Wrap them in a Variable object
                 if self.gpu_mode:
-                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
-                    label_adv = torch.tensor(data['source'], dtype=torch.float).cuda()
-                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    input_seg, label_seg = torch.as_tensor(data[1]['image'], dtype=torch.float).cuda() ,torch.as_tensor(data[1]['segment'], dtype=torch.float).cuda()
+                    input_adv = torch.as_tensor(data[0]['image'], dtype=torch.float).cuda()
+                    label_adv = torch.as_tensor(data[0]['source'], dtype=torch.float).cuda()
+                    input_seg, input_adv, label_seg, label_adv = Variable(input_seg), Variable(input_adv),Variable(label_seg), Variable(label_adv)
                 else:
-                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
-                    label_adv = torch.tensor(data['source'], dtype=torch.float)
-                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    input_seg, label_seg = torch.as_tensor(data[1]['image'], dtype=torch.float) ,torch.as_tensor(data[1]['segment'], dtype=torch.float)
+                    input_adv = torch.as_tensor(data[0]['image'], dtype=torch.float)
+                    label_adv = torch.as_tensor(data[0]['source'], dtype=torch.float)
+                    input_seg, input_adv, label_seg, label_adv = Variable(input_seg), Variable(input_adv),Variable(label_seg), Variable(label_adv)
                 
                 #Set the parameter gradients to zero
-                optimizer_seg.zero_grad()
-                optimizer_adv.zero_grad()
+                
+                for k in range(2):
+                    #optimizer_seg.zero_grad()
+                    #optimizer_adv.zero_grad()
+                    if k == 0 :
+                        optimizer_adv.zero_grad()
+                        
+                        output_dis = adv(seg(input_adv)[1])
+                        loss_discriminator = loss_dis(output_dis[0],label_adv)
+                        
+                        loss_discriminator.backward()
+                        optimizer_adv.step()
+                        running_loss_dis += loss_discriminator.item()
+                        total_train_loss_dis += loss_discriminator.item()
+                        loss_adv_value =loss_discriminator.item()
+                        if output_dis[0].argmax() == label_adv.argmax():
+                            G+=1
+                        else:
+                            F+=1
+                        
+                    if k == 1 :
+                        optimizer_seg.zero_grad()
+                        output_seg = seg(input_seg)[0]
+                        loss_adversarial = loss_seg_adv(loss_adv_value,output_seg,label_seg,alpha)
+                        loss_adversarial.backward()
+                        optimizer_seg.step()
+                        running_loss += loss_adversarial.item()
+                        total_train_loss += loss_adversarial.item()
+                    
                 
                 #Forward pass, backward pass, optimize
-                outputs_seg = seg(inputs)
-                outputs_adv = adv(outputs_seg[1:])
-                
-                
-                loss_discriminator = loss_dis(outputs_adv,label_adv)
-                loss_adversarial = loss_seg_adv(loss_discriminator,outputs_seg[0],labels_seg,alpha) 
-                #loss_size.backward()
-                #optimizer.step()
-                
-                loss_discriminator.backward()
-                optimizer_adv.step()
-                
-                if label_adv == 0:
-                    loss_adversarial.backward()
-                    optimizer_seg.step()
+                                   
                 
                 #print(list(net.parameters())[0].grad.mean())
                 
                 #Print statistics
-                running_loss += loss_adversarial.item()
-                total_train_loss += loss_adversarial.item()
+
                 
                 #Print every 10th batch of an epoch
                 if (i + 1) % (print_every + 1) == 0:
                     print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
                             epoch+1, int(100 * (i+1) / n_batches), running_loss / print_every, time.time() - start_time))
-                    #print('data max', outputs[0,0].max(),outputs[0,1].max())
+                    print("Epoch {}, {:d}% \t train_loss: {:.2f} took: {:.2f}s".format(
+                            epoch+1, int(100 * (i+1) / n_batches), running_loss_dis / print_every, time.time() - start_time))
+                    print('data max', output_seg[0,0].mean(),output_seg[0,1].mean())
+
+
                     
                     #Reset running loss and time
                     running_loss = 0.0
+                    running_loss_dis = 0.0
                     start_time = time.time()
-                
+             
+            print('Number of well prediction', G/(G+F))
             #At the end of the epoch, do a pass on the validation set
             #test()
             total_val_loss = 0
+            total_val_loss_dis = 0
             
             for data in val_loader:
                 
                 if self.gpu_mode:
-                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float).cuda() ,torch.tensor(data['segment'], dtype=torch.float).cuda()
-                    label_adv = torch.tensor(data['source'], dtype=torch.float).cuda()
-                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
+                    input_seg, label_seg = torch.as_tensor(data[1]['image'], dtype=torch.float).cuda() ,torch.as_tensor(data[1]['segment'], dtype=torch.float).cuda()
+                    input_adv = torch.as_tensor(data[0]['image'], dtype=torch.float).cuda()
+                    label_adv = torch.as_tensor(data[0]['source'], dtype=torch.float).cuda()
+                    input_seg, input_adv, label_seg, label_adv = Variable(input_seg), Variable(input_adv),Variable(label_seg), Variable(label_adv)
                 else:
-                    inputs, labels_seg = torch.tensor(data['image'], dtype=torch.float) ,torch.tensor(data['segment'], dtype=torch.float)
-                    label_adv = torch.tensor(data['source'], dtype=torch.float)
-                    inputs, labels, label_adv = Variable(inputs), Variable(labels_seg), Variable(label_adv)
-                    
+                    input_seg, label_seg = torch.tensor(data[1]['image'], dtype=torch.float) ,torch.tensor(data[1]['segment'], dtype=torch.float)
+                    input_adv = torch.tensor(data[0]['image'], dtype=torch.float)
+                    label_adv = torch.tensor(data[0]['source'], dtype=torch.float)
+                    input_seg, input_adv, label_seg, label_adv = Variable(input_seg), Variable(input_adv),Variable(label_seg), Variable(label_adv)
+                
                 #Forward pass
-                val_outputs_seg = seg(inputs)
+                
+                val_output_seg = seg(input_seg)[0]
+                #output_dis = adv(seg(input_adv)[1])
                 
                 
-                
-                loss_segmenter = loss_seg(val_outputs_seg[0],labels_seg)
+                #loss_discriminator = loss_dis(output_dis,label_adv)
+                loss_segmenter = loss_seg(val_output_seg,label_seg)
 
-                val_loss_size = loss_segmenter(val_outputs_seg, labels)
-                total_val_loss += val_loss_size.data[0]
                 
-            print("Validation loss = {:.2f}".format(total_val_loss / len(val_loader)))
+                total_val_loss += loss_segmenter.item()
+                #total_val_loss_dis += loss_discriminator.item()
+                
+            print("Validation loss segmenter = {:.2f}".format(total_val_loss / len(val_loader)))
+            print("Validation loss discriminator= {:.2f}".format(total_val_loss_dis / len(val_loader)))
+
             
             print("Training finished, took {:.2f}s".format(time.time() - training_start_time))
                     
                 
     def test(self,):
-        pred = self.net.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())
+        pred = self.seg.cuda()(torch.tensor(a['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())[0]
         imshow(pred.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
+        pred2 = self.seg.cuda()(torch.tensor(b['image'].reshape(1,3,self.input_dim,self.input_dim),dtype=torch.float).cuda())[0]
+        imshow(pred2.cpu().detach().numpy().reshape(2,self.input_dim-18,self.input_dim-18)[1])
     
     def save(self,PATH_seg,PATH_adv):
         torch.save(self.seg.state_dict(), PATH_seg)
@@ -556,4 +392,46 @@ class UDA(object):
         
         self.adv.load_state_dict(torch.load(PATH_adv))
         self.adv.eval()
+        
+    def get_DSC_on_T(self):
+        total_loss = 0
+        dataloader = torch.utils.data.DataLoader(Tar,
+                                             batch_size = 1,
+                                             shuffle = True,
+                                             num_workers = 0)
+        for data in dataloader:
+            input_seg, label_seg = torch.as_tensor(data['image'], dtype=torch.float).cuda() ,torch.as_tensor(data['segment'], dtype=torch.float).cuda()
+            output = self.seg(input_seg)[0]
+            loss = DSC(output,label_seg)
+            total_loss += loss.item()
+            
+        return(total_loss/len(dataloader))
 
+
+input_dim =150
+
+def DSC(logits,labels):
+            eps=10e-5
+            pred = logits.view(2,1,input_dim-18,input_dim-18)
+            labels =labels.view(2,1,input_dim-18,input_dim-18)
+            precision = torch.sum(pred[1]*labels[1])/torch.sum(pred[1])
+            
+            recall = torch.sum(pred[1]*labels[1])/torch.sum(labels[1])
+            
+            return -2*(precision*recall)/(precision+recall+eps)
+    
+
+def get_DSC_on_T(seg):
+    total_loss = 0
+    dataloader = torch.utils.data.DataLoader(Tar,
+                                         batch_size = 1,
+                                         shuffle = True,
+                                         num_workers = 0)
+    for data in dataloader:
+        input_seg, label_seg = torch.as_tensor(data['image'], dtype=torch.float).cuda() ,torch.as_tensor(data['segment'], dtype=torch.float).cuda()
+        output = seg.net(input_seg)
+        loss = DSC(output,label_seg)
+        total_loss += loss.item()
+        
+    return(total_loss/len(dataloader))
+        
