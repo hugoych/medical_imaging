@@ -26,10 +26,7 @@ Seg = SegDataset('Train/Seg_train',transform=resize)
 Tar = TargetDataset('Target',transform=resize)
 b = Tar.__getitem__(150)
 a = Seg.__getitem__(166)
-#print(os.listdir('Train/Seg_train/X_S')[1])
 
-#b = imread('Train/Seg_train/X_S/IM_000032.jpg')
-imshow(a['segment'][0])
         
 #%%
 
@@ -421,17 +418,4 @@ def DSC(logits,labels):
             return -2*(precision*recall)/(precision+recall+eps)
     
 
-def get_DSC_on_T(seg):
-    total_loss = 0
-    dataloader = torch.utils.data.DataLoader(Tar,
-                                         batch_size = 1,
-                                         shuffle = True,
-                                         num_workers = 0)
-    for data in dataloader:
-        input_seg, label_seg = torch.as_tensor(data['image'], dtype=torch.float).cuda() ,torch.as_tensor(data['segment'], dtype=torch.float).cuda()
-        output = seg.net(input_seg)
-        loss = DSC(output,label_seg)
-        total_loss += loss.item()
-        
-    return(total_loss/len(dataloader))
-        
+
